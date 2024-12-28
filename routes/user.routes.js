@@ -1,17 +1,23 @@
-const express = require('express');
-const { handleUserRegister, handleUserLogin, handleGetAllUsers, handleGetCurrentUser, handleUpdateUser, handleDeleteUser } = require('../controllers/user');
+const express = require("express");
+const {
+  handleUserRegister,
+  handleUserLogin,
+  handleGetAllUsers,
+  handleGetCurrentUser,
+  handleUpdateUser,
+  handleDeleteUser,
+} = require("../controllers/user.controller");
 
-const router = express.Router()
+const router = express.Router();
 
-router.post('/register', handleUserRegister)
-router.post('/login', handleUserLogin)
+router.post("/register", handleUserRegister);
+router.post("/login", handleUserLogin);
 
-router.get('/get-all-users', handleGetAllUsers)
-router.get('/get-current-user', handleGetCurrentUser)
+router.get("/get-all-users", handleGetAllUsers);
+router.get("/get-current-user", handleGetCurrentUser);
 
-router.delete('/delete-user', handleDeleteUser)
+router.delete("/delete-user", handleDeleteUser);
 
-router.patch('/update-user/:user_email', handleUpdateUser)
-
+router.patch("/update-user/:user_email", handleUpdateUser);
 
 module.exports = router;

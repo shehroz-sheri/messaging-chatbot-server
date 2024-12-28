@@ -1,8 +1,7 @@
 const User = require("../models/user");
 const bcrypt = require("bcrypt");
-const generateToken = require("../services/authToken");
+const generateToken = require("../services/token.service");
 const Conversation = require("../models/conversation");
-const { tokenMaxAge } = require("../constants/constants");
 
 const handleUserRegister = async (req, res) => {
   try {
