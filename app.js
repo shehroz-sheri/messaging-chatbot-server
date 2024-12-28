@@ -1,0 +1,115 @@
+require("dotenv").config();
+const express = require("express");
+const cookieParser = require("cookie-parser");
+const connectMongoDb = require("./db/connection");
+const userRoutes = require("./routes/user");
+const chatRoutes = require("./routes/chat");
+const cors = require("cors");
+const User = require("./models/user");
+const http = require("http");
+const verifyToken = require("./middleware/verifyToken");
+const app = express();
+
+const BASE_URL = process.env.BASE_URL;
+
+const server = http.createServer(app);
+const io = require("socket.io")(server, {
+  cors: {
+    origin: BASE_URL,
+  },
+});
+
+const PORT = process.env.PORT || 8000;
+
+// Middlewares
+app.use(express.json());
+app.use(
+  cors({
+    origin: BASE_URL,
+    // methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
+  })
+);
+app.use(cookieParser());
+app.use(express.urlencoded({ extended: false }));
+
+// MongoDB Connection
+connectMongoDb(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connection established"))
+  .catch((err) => console.error("MongoDB connection failed", err));
+
+// Socket.IO
+let users = [];
+io.on("connection", (socket) => {
+  socket.on("addUser", (userId) => {
+    const isUserExist = users.find((user) => user.userId === userId);
+    if (!isUserExist) {
+      users.push({ userId, socketId: socket.id });
+    } else {
+      users = users.map((user) =>
+        user.userId === userId ? { userId, socketId: socket.id } : user
+      );
+    }
+    io.emit("getUsers", users);
+  });
+
+  socket.on(
+    "sendMessage",
+    async ({ senderId, receiverId, message, conversationId }) => {
+      try {
+        const user = await User.findById(senderId);
+        if (!user) {
+          return io
+            .to(socket.id)
+            .emit("error", { message: "Sender not found" });
+        }
+
+        const receiver = users.find((user) => user.userId === receiverId);
+        const sender = users.find((user) => user.userId === senderId);
+
+        const payload = {
+          senderId,
+          receiverId,
+          message,
+          conversationId,
+          user: {
+            userId: user._id,
+            email: user.email,
+            name: user.name,
+            number: user.number,
+          },
+        };
+
+        if (receiver) {
+          io.to(receiver.socketId)
+            .to(sender.socketId)
+            .emit("getMessage", payload);
+        } else {
+          io.to(sender.socketId).emit("getMessage", payload);
+        }
+      } catch (error) {
+        console.error("Error handling sendMessage:", error);
+        io.to(socket.id).emit("error", { message: "Internal server error" });
+      }
+    }
+  );
+
+  socket.on("disconnect", () => {
+    users = users.filter((user) => user.socketId !== socket.id);
+    io.emit("getUsers", users);
+  });
+});
+
+// Routes
+app.get("/", (req, res) => {
+  res.cookie("jwt", "This is cookie");
+  return res.json({ message: "Hello world" });
+});
+
+app.use("/user", userRoutes);
+app.use("/chat", verifyToken, chatRoutes);
+
+// Server Listener
+server.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
