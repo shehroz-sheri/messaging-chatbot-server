@@ -7,16 +7,14 @@ const handleUserRegister = async (req, res) => {
   try {
     const { name, email, password, number } = req.body;
 
-    if (!name || !email || !password || !number) {
+    if (!name || !email || !password || !number)
       return res.status(400).send("All fields are required!");
-    }
 
-    const isEmailAlreadyExist = await User.findOne({ email });
-    const isNumberAlreadyExist = await User.findOne({ number });
+    const existingUser = await User.findOne({
+      $or: [{ email }, { number }],
+    });
 
-    if (isEmailAlreadyExist || isNumberAlreadyExist) {
-      return res.status(400).send("User already exists!");
-    }
+    if (existingUser) return res.status(400).send("User already exists!");
 
     await User.create({ name, email, password, number });
     return res.status(201).send("User created successfully!");
@@ -29,22 +27,17 @@ const handleUserRegister = async (req, res) => {
 const handleUserLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    if (!username || !password) {
+    console.log(req.body);
+    if (!username || !password)
       return res.status(400).send("All fields are required!");
-    }
 
     const user = await User.findOne({
       $or: [{ email: username }, { number: username }],
     });
-    if (!user) {
-      return res.status(404).send("User not found!");
-    }
+    if (!user) return res.status(404).send("User not found!");
 
-    const auth = await bcrypt.compare(password, user.password);
-    if (!auth) {
-      return res.status(400).send("Invalid credentials!");
-    }
+    const auth = await bcrypt.compare(password, user?.password);
+    if (!auth) return res.status(400).send("Invalid credentials!");
 
     const token = generateToken(user);
     res.cookie("token", token);
@@ -61,7 +54,7 @@ const handleUserLogin = async (req, res) => {
       message: "Login Successful!",
     });
   } catch (error) {
-    console.error("Error during login:", error);
+    console.log("Error during login:", error);
     return res.status(500).json({ message: "Error logging in!" });
   }
 };
@@ -80,7 +73,7 @@ const handleGetAllUsers = async (req, res) => {
 
     res.status(200).json(usersData);
   } catch (error) {
-    console.error("Error fetching users:", error);
+    console.log("Error fetching users:", error);
     return res.status(500).json({ message: "Error fetching users!" });
   }
 };
@@ -89,18 +82,16 @@ const handleGetCurrentUser = async (req, res) => {
   try {
     const { user } = req.body;
 
-    if (!user || !user.email) {
+    if (!user || !user.email)
       return res.status(400).json({ message: "User data is required!" });
-    }
 
     const currentUser = await User.findOne({ email: user.email });
-    if (!currentUser) {
+    if (!currentUser)
       return res.status(404).json({ message: "User not found!" });
-    }
 
     return res.status(200).json(currentUser);
   } catch (error) {
-    console.error("Error fetching current user:", error);
+    console.log("Error fetching current user:", error);
     return res.status(500).json({ message: "Error fetching user!" });
   }
 };
@@ -109,14 +100,12 @@ const handleDeleteUser = async (req, res) => {
   try {
     const { user } = req.body;
 
-    if (!user || !user.email) {
+    if (!user || !user.email)
       return res.status(400).json({ message: "User data is required!" });
-    }
 
     const currentUser = await User.findOne({ email: user.email });
-    if (!currentUser) {
+    if (!currentUser)
       return res.status(404).json({ message: "User not found!" });
-    }
 
     const userId = currentUser._id;
     const conversations = await Conversation.find({
@@ -135,23 +124,24 @@ const handleDeleteUser = async (req, res) => {
 
 const handleUpdateUser = async (req, res) => {
   try {
-    const userEmail = req.params.user_email;
-    const { userDetails } = req.body;
+    const userId = req.params.id;
+    const userDetails = req.body;
 
-    if (!userEmail || !userDetails) {
+    console.log({ userId, userDetails });
+
+    if (!userId || !userDetails)
       return res
         .status(400)
         .json({ message: "Email and user details are required!" });
-    }
 
-    const updatedUser = await User.findOneAndUpdate(
-      { email: userEmail },
-      userDetails,
-      { new: true }
-    );
-    if (!updatedUser) {
+    const updatedUser = await User.findByIdAndUpdate(userId, userDetails, {
+      new: true,
+    });
+    if (!updatedUser)
       return res.status(404).json({ message: "User not found!" });
-    }
+
+    const token = generateToken(updatedUser);
+    res.cookie("token", token);
 
     return res.status(200).json({
       user: {
@@ -169,6 +159,44 @@ const handleUpdateUser = async (req, res) => {
   }
 };
 
+const handleGetAvailableUsers = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    // Fetch all users
+    const allUsers = await User.find().select("-password");
+
+    // Fetch conversations of the logged-in user
+    const conversations = await Conversation.find({
+      members: { $in: [userId] },
+    });
+
+    // Extract IDs of users with existing conversations
+    const conversationUserIds = conversations.flatMap((conv) =>
+      conv.members.filter((member) => member != userId)
+    );
+    console.log({ conversationUserIds });
+
+    // Filter out users with existing conversations
+    const availableUsers = allUsers.filter((user) => {
+      // Convert user._id and conversationUserIds to strings for comparison
+      return (
+        user._id.toString() !== userId.toString() &&
+        !conversationUserIds
+          .map((id) => id.toString())
+          .includes(user._id.toString())
+      );
+    });
+
+    console.log({ availableUsers });
+
+    res.status(200).json(availableUsers);
+  } catch (error) {
+    console.error("Error fetching available users:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 module.exports = {
   handleUserRegister,
   handleUserLogin,
@@ -176,4 +204,5 @@ module.exports = {
   handleGetCurrentUser,
   handleDeleteUser,
   handleUpdateUser,
+  handleGetAvailableUsers,
 };
